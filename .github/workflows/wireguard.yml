@@ -1,0 +1,44 @@
+name: FreeVPN-WireGuard
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时运行一次
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+
+      - name: Install WireGuard
+        run: |
+          sudo apt update
+          sudo apt install wireguard -y
+          sudo modprobe wireguard
+
+      - name: Generate Keys
+        run: |
+          umask 077
+          wg genkey | tee privatekey | wg pubkey > publickey
+
+      - name: Setup WireGuard Config
+        run: |
+          PRIVATE_KEY=$(cat privatekey)
+          echo "[Interface]
+          Address = 10.0.0.1/24
+          ListenPort = 51820
+          PrivateKey = $PRIVATE_KEY
+          PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+          " > wg0.conf
+
+      - name: Start WireGuard
+        run: |
+          sudo wg-quick up ./wg0.conf
+          sudo wg
+
+      - name: Keepalive for Tunnel
+        run: |
+          sleep 21540  # 等待6小时保持VPN在线
